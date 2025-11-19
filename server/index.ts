@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import {Buffer} from "buffer";
+import path from "path";
 import { parseDocxBuffer } from "../resume-parser/parseDocx";
 
 const app = express();
@@ -39,6 +40,52 @@ async function parsePdfBuffer(buffer: Buffer): Promise<string> {
   }
 }
 
+// New: attempt to load workspace parser and post-process extracted text
+async function postProcessText(text: string, fileName?: string): Promise<any> {
+  const candidates = [
+    // compiled locations
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "index.js"),
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "parse-resume-from-pdf.js"),
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "extract-resume-from-sections.js"),
+    // source locations (dev)
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "index.ts"),
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "parse-resume-from-pdf.ts"),
+    path.join(process.cwd(), "lib", "parse-resume-from-pdf", "extract-resume-from-sections.ts"),
+    // package-style require
+    "lib/parse-resume-from-pdf",
+    "../lib/parse-resume-from-pdf",
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require(candidate);
+      if (!mod) continue;
+
+      const fn =
+        mod.parseResumeFromPdf ||
+        mod.parseResumeFromText ||
+        mod.parseResume ||
+        mod.extractResumeFromSections ||
+        mod.default;
+
+      if (typeof fn === "function") {
+        // try calling with both signatures (text) and (text, { fileName })
+        try {
+          return await Promise.resolve(fn(text, { fileName }));
+        } catch {
+          return await Promise.resolve(fn(text));
+        }
+      }
+    } catch {
+      // ignore resolution errors, try next candidate
+    }
+  }
+
+  // no structured parser found — return null to indicate fallback
+  return null;
+}
+
 app.post("/api/parse-resume", async (req: any, res: any) => {
   try {
     // 1) If client sent plain resumeData text, keep echo/placeholder behavior
@@ -57,8 +104,8 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
 
       if (lower.includes("pdf") || fileName.endsWith(".pdf") || mimeType === "application/pdf") {
         const text = await parsePdfBuffer(buffer);
-        // TODO: optionally call your higher-level resume extraction routine here
-        return res.json({ parsedText: text });
+        const structured = await postProcessText(text, fileName);
+        return res.json({ parsedText: text, structured });
       }
 
       if (
@@ -68,7 +115,8 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
         const text = await parseDocxBuffer(buffer);
-        return res.json({ parsedText: text });
+        const structured = await postProcessText(text, fileName);
+        return res.json({ parsedText: text, structured });
       }
 
       return res.status(400).json({ error: "Unsupported file type" });

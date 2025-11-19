@@ -15,7 +15,7 @@ async function parsePdfBuffer(buffer: Buffer): Promise<string> {
     // dynamically import the pdfjs module in an ESM-friendly way
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs") as any;
 
-    const loadingTask = pdfjs.getDocument({ data: buffer });
+    const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
     const pdf = await loadingTask.promise;
     const pageCount = pdf.numPages || 0;
     const texts: string[] = [];

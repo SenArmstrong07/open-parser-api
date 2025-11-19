@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import { Draft } from "immer";
 import type { RootState } from "../redux/store";
 import type {
   FeaturedSkill,
@@ -79,14 +80,14 @@ export const resumeSlice = createSlice({
   initialState: initialResumeState,
   reducers: {
     changeProfile: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<{ field: keyof ResumeProfile; value: string }>
     ) => {
       const { field, value } = action.payload;
       draft.profile[field] = value;
     },
     changeWorkExperiences: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<
         CreateChangeActionWithDescriptions<ResumeWorkExperience>
       >
@@ -96,7 +97,7 @@ export const resumeSlice = createSlice({
       workExperience[field] = value as any;
     },
     changeEducations: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<CreateChangeActionWithDescriptions<ResumeEducation>>
     ) => {
       const { idx, field, value } = action.payload;
@@ -104,7 +105,7 @@ export const resumeSlice = createSlice({
       education[field] = value as any;
     },
     changeProjects: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<CreateChangeActionWithDescriptions<ResumeProject>>
     ) => {
       const { idx, field, value } = action.payload;
@@ -112,7 +113,7 @@ export const resumeSlice = createSlice({
       project[field] = value as any;
     },
     changeSkills: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<
         | { field: "descriptions"; value: string[] }
         | {
@@ -135,13 +136,13 @@ export const resumeSlice = createSlice({
       }
     },
     changeCustom: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<{ field: "descriptions"; value: string[] }>
     ) => {
       const { value } = action.payload;
       draft.custom.descriptions = value;
     },
-    addSectionInForm: (draft, action: PayloadAction<{ form: ShowForm }>) => {
+    addSectionInForm: (draft: Draft<Resume>, action: PayloadAction<{ form: ShowForm }>) => {
       const { form } = action.payload;
       switch (form) {
         case "workExperiences": {
@@ -159,7 +160,7 @@ export const resumeSlice = createSlice({
       }
     },
     moveSectionInForm: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<{
         form: ShowForm;
         idx: number;
@@ -186,7 +187,7 @@ export const resumeSlice = createSlice({
       }
     },
     deleteSectionInFormByIdx: (
-      draft,
+      draft: Draft<Resume>,
       action: PayloadAction<{ form: ShowForm; idx: number }>
     ) => {
       const { form, idx } = action.payload;
@@ -194,7 +195,7 @@ export const resumeSlice = createSlice({
         draft[form].splice(idx, 1);
       }
     },
-    setResume: (draft, action: PayloadAction<Resume>) => {
+    setResume: (draft: Draft<Resume>, action: PayloadAction<Resume>) => {
       return action.payload;
     },
   },

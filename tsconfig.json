@@ -10,5 +10,13 @@
     "allowJs": true,
     "strict": true
   },
-  "include": ["server", "resume-parser"]
+  "include": [
+    "server", 
+    "resume-parser",
+  "global.d.ts",
+   "components/**/*",
+   "lib/**/*",
+   "server/**/*",
+   "resume-parser/**/*",
+   "page.tsx"]
 }

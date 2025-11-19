@@ -1,4 +1,3 @@
-
 declare module "*.svg" {
   import * as React from "react";
   export const ReactComponent: React.FunctionComponent<
@@ -30,13 +29,22 @@ declare var test: any;
 declare var expect: any;
 
 { 
-// Added: basic JSX namespace so TypeScript can resolve JSX in components
-// This is a safe fallback when @types/react might not be available during the build.
+// Replaced: basic JSX namespace so TypeScript can resolve JSX in components
+// Expanded to include Element and other common JSX types used across the codebase.
 declare namespace JSX {
+  // satisfy `JSX.Element` usages
+  type Element = any;
+
+  // satisfy `JSX.ElementClass`/`JSX.ElementChildrenAttribute` etc.
+  type ElementClass = any;
+  interface ElementChildrenAttribute { children: {} }
+
+  // allow any intrinsic element name with any props (fallback)
   interface IntrinsicElements {
-    // allow any element name with any props as a last-resort fallback
     [elemName: string]: any;
   }
+
+  // allow any attributes on JSX elements (fallback)
   interface IntrinsicAttributes {
     [key: string]: any;
   }

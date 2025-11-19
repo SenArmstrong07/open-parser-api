@@ -18,5 +18,13 @@
    "lib/**/*",
    "server/**/*",
    "resume-parser/**/*",
-   "page.tsx"]
+   "page.tsx"],
+   "exclude": [
+    "node_modules", 
+    "public", 
+    "lib/__tests__", 
+    "lib/**/*.test.ts", 
+    "lib/**/*.test.tsx", 
+    "**/__tests__/**"
+  ]
 }

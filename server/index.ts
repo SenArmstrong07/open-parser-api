@@ -7,7 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.post("/api/parse-resume", async (req, res) => {
+app.post("/api/parse-resume", async (req: any, res: any) => {
   try {
     const { resumeData } = req.body;
     // const parsed = parseResume(resumeData); // Use your actual parsing function

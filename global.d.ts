@@ -28,3 +28,17 @@ declare var describe: any;
 declare var it: any;
 declare var test: any;
 declare var expect: any;
+
+{ 
+// Added: basic JSX namespace so TypeScript can resolve JSX in components
+// This is a safe fallback when @types/react might not be available during the build.
+declare namespace JSX {
+  interface IntrinsicElements {
+    // allow any element name with any props as a last-resort fallback
+    [elemName: string]: any;
+  }
+  interface IntrinsicAttributes {
+    [key: string]: any;
+  }
+}
+}

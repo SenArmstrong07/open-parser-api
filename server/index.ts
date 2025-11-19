@@ -12,10 +12,8 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 // helper: extract text from a PDF buffer using pdfjs-dist
 async function parsePdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    // dynamically require so build doesn't fail if types are missing
-    // uses the legacy build entry which works in Node
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const pdfjs = require("pdfjs-dist/legacy/build/pdf") as any;
+    // dynamically import the pdfjs module in an ESM-friendly way
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs") as any;
 
     const loadingTask = pdfjs.getDocument({ data: buffer });
     const pdf = await loadingTask.promise;

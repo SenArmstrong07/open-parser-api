@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "dev": "ts-node server/server.ts",
-    "start": "NODE_ENV=production node dist/server.js",
-    "build": "tsc"
+    "dev": "ts-node server/index.ts",
+    "build": "tsc",
+    "start": "node lib/server/index.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.0.0",

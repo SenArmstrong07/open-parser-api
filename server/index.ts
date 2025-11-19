@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
-// Import your parsing logic here
-// import { parseResume } from "../resume-parser/parseResume"; // Example
+import {Buffer} from "buffer";
+import { parseDocxBuffer } from "../resume-parser/parseDocx";
 
 const app = express();
 app.use(cors());
@@ -37,39 +37,6 @@ async function parsePdfBuffer(buffer: Buffer): Promise<string> {
       throw new Error("PDF parsing failed:" + String(err));
     }
   }
-}
-
-// helper: try to load a local DOCX parser utility from the repo
-async function parseDocxBuffer(buffer: Buffer): Promise<string> {
-  // try a few plausible locations in your workspace
-  const candidates = [
-    "../resume-parser/parseDocx",
-    "../resume-parser/parse-docx",
-    "../resume-parser/index",
-    "./../resume-parser/parseDocx",
-  ];
-
-  for (const p of candidates) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require(p);
-      if (typeof mod.parseDocxBuffer === "function") {
-        return await mod.parseDocxBuffer(buffer);
-      }
-      if (typeof mod.parseDocx === "function") {
-        return await mod.parseDocx(buffer);
-      }
-      if (typeof mod.default === "function") {
-        return await mod.default(buffer);
-      }
-    } catch {
-      // ignore and try next candidate
-    }
-  }
-
-  throw new Error(
-    "No DOCX parser found in repo. Add a parser that exports parseDocxBuffer(buffer: Buffer) under resume-parser/ and retry."
-  );
 }
 
 app.post("/api/parse-resume", async (req: any, res: any) => {

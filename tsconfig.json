@@ -13,12 +13,12 @@
   "include": [
     "server", 
     "resume-parser",
-  "global.d.ts",
-   "components/**/*",
-   "lib/**/*",
-   "server/**/*",
-   "resume-parser/**/*",
-   "page.tsx"],
+    "global.d.ts",
+    "components/**/*",
+    "lib/**/*",
+    "server/**/*",
+    "resume-parser/**/*",
+    "page.tsx"],
    "exclude": [
     "node_modules", 
     "public", 

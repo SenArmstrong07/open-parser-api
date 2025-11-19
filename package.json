@@ -1,8 +1,9 @@
 {
   "scripts": {
     "dev": "ts-node server/index.ts",
+    "prestart": "npm run build",
     "build": "tsc",
-    "start": "node lib/server/index.js"
+    "start": "node dist/server/index.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.0.0",

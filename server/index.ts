@@ -2,13 +2,12 @@ import express from "express";
 import cors from "cors";
 import {Buffer} from "buffer";
 import path from "path";
-import { parseDocxBuffer } from "../resume-parser/parseDocx";
+import { pathToFileURL } from "url";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
-
 
 // helper: extract text from a PDF buffer using pdfjs-dist
 async function parsePdfBuffer(buffer: Buffer): Promise<string> {
@@ -84,6 +83,104 @@ async function postProcessText(text: string, fileName?: string): Promise<any> {
 
   // no structured parser found — return null to indicate fallback
   return null;
+}
+
+// Try to dynamically import a repo-local parseDocx implementation (compiled or source).
+async function loadRepoParseDocxModule(): Promise<any | null> {
+  const candidates = [
+    // dist compiled locations (when running compiled output)
+    path.join(process.cwd(), "dist", "resume-parser", "parseDocx.js"),
+    path.join(process.cwd(), "dist", "resume-parser", "parseDocx.mjs"),
+    path.join(process.cwd(), "dist", "resume-parser", "index.js"),
+    // project-root source locations (dev)
+    path.join(process.cwd(), "resume-parser", "parseDocx.ts"),
+    path.join(process.cwd(), "resume-parser", "parseDocx.js"),
+    path.join(process.cwd(), "resume-parser", "index.ts"),
+    path.join(process.cwd(), "resume-parser", "index.js"),
+    // fallback plain-ish imports (Node may resolve these depending on runtime)
+    path.join(process.cwd(), "resume-parser", "parseDocx"),
+    path.join(process.cwd(), "resume-parser"),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      // try loading via file:// URL (works for Node ESM)
+      try {
+        const url = pathToFileURL(candidate).href;
+        // dynamic import must use a specifier the loader understands
+        // eslint-disable-next-line no-await-in-loop
+        const mod = await import(url);
+        if (mod) return mod;
+      } catch {
+        // try plain dynamic import as last resort
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const mod = await import(candidate);
+          if (mod) return mod;
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore and try next candidate
+    }
+  }
+  return null;
+}
+
+// helper: extract text from a DOCX buffer — tries repo parser first, otherwise fallback
+async function parseDocxBuffer(buffer: Buffer): Promise<string> {
+  // 1) try repo-local parser (if present)
+  try {
+    const mod = await loadRepoParseDocxModule();
+    if (mod) {
+      const fn = mod.parseDocxBuffer ?? mod.parseDocx ?? mod.default;
+      if (typeof fn === "function") {
+        const out = fn(buffer);
+        if (out && typeof out.then === "function") {
+          return await out;
+        }
+        return String(out ?? "");
+      }
+    }
+  } catch {
+    // fall through to built-in fallback
+  }
+
+  // 2) built-in fallback: unzip and extract word/document.xml text
+  try {
+    const JSZipModule = (await import("jszip")) as any;
+    const JSZip = JSZipModule.default ?? JSZipModule;
+    const zip = await new JSZip().loadAsync(buffer);
+
+    const docFile = zip.file("word/document.xml");
+    if (!docFile) {
+      throw new Error("word/document.xml not found inside docx");
+    }
+
+    const xml = await docFile.async("text");
+    const rawParagraphs = xml.split("</w:p>");
+    const paragraphs: string[] = rawParagraphs
+      .map((p: string) => {
+        const texts: string[] = [];
+        const re = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(p)) !== null) {
+          texts.push(m[1]);
+        }
+        let paragraph = texts.join("");
+        paragraph = paragraph.replace(/<w:tab[^>]*\/>/g, "\t").replace(/<w:br[^>]*\/>/g, "\n");
+        paragraph = paragraph.replace(/\s+/g, " ").trim();
+        return paragraph;
+      })
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+
+    return paragraphs.join("\n\n");
+  } catch (err: any) {
+    if (err instanceof Error) throw err;
+    throw new Error(String(err));
+  }
 }
 
 app.post("/api/parse-resume", async (req: any, res: any) => {

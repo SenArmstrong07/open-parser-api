@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
-import { readPdf } from "../lib/parse-resume-from-pdf/read-pdf";
+import fs from "fs/promises";
+import path from "path";
 import { parseResumeFromPdf } from "../lib/parse-resume-from-pdf/index";
 
 const app = express();
@@ -8,40 +9,21 @@ app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
-// helper: extract text items from a PDF buffer using pdfjs-dist and utility
 async function parsePdfBufferToResume(buffer: Buffer): Promise<any> {
-  // Create a temporary file URL for pdfjs (in Node, use a Uint8Array directly)
-  // But your readPdf expects a fileUrl, so we need to adapt it for Node.
-  // Instead, use pdfjs directly as in your original code, or adapt readPdf to accept buffers.
-  // For now, let's use your original extraction logic and then pass the text to the parser.
+  // Save buffer to a temp file
+  const tempDir = path.join(process.cwd(), "tmp");
+  await fs.mkdir(tempDir, { recursive: true });
+  const tempPath = path.join(tempDir, `resume_${Date.now()}.pdf`);
+  await fs.writeFile(tempPath, buffer);
 
-  // If you want to use readPdf, you need to adapt it to accept buffers (or save buffer to a temp file and pass its path).
-  // For simplicity, let's use your original extraction logic and then parse the text.
-
-  // --- Original extraction logic ---
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs") as any;
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
-  const pdf = await loadingTask.promise;
-  const pageCount = pdf.numPages || 0;
-  const texts: string[] = [];
-
-  for (let i = 1; i <= pageCount; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const strings = (content.items || []).map((it: any) => it.str || "");
-    texts.push(strings.join(" "));
+  try {
+    // Pass file path to parser (it expects a fileUrl)
+    const resume = await parseResumeFromPdf(tempPath);
+    return { parsedText: null, structured: resume };
+  } finally {
+    // Clean up temp file
+    await fs.unlink(tempPath).catch(() => {});
   }
-
-  const rawText = texts.join("\n\n");
-
-  // --- Structured parsing using your utility ---
-  // If your parser expects raw text:
-  const structured = parseResumeFromPdf(rawText);
-
-  // If your parser expects text items, you need to adapt the extraction above to produce textItems as in readPdf.
-  // For now, let's assume it works with raw text.
-
-  return { parsedText: rawText, structured };
 }
 
 app.post("/api/parse-resume", async (req: any, res: any) => {

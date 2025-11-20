@@ -3,7 +3,7 @@
     "dev": "ts-node server/index.ts",
     "clean": "rm -rf dist",
     "prestart": "npm run build",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js"
   },
   "dependencies": {

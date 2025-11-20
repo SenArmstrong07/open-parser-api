@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import fs from "fs/promises";
 import path from "path";
-import { parseResumeFromPdf } from "../lib/parse-resume-from-pdf/index.js";
+import { parseResumeFromPdf } from "../lib/parse-resume-from-pdf/index";
 
 const app = express();
 app.use(cors());

@@ -5,6 +5,7 @@
     "module": "ESNext",
     "target": "ESNext",
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "moduleResolution": "Node",
     "allowJs": true,

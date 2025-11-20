@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "dev": "ts-node server/index.ts",
-    "clean": "rm -rf dist",
+    "dev": "ts-node  --esm server/index.ts",
+    "clean": "rm -rf dist tmp",
     "prestart": "npm run build",
     "build": "tsc",
     "start": "node dist/server/index.js"

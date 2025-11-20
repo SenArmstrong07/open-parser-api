@@ -1,31 +1,27 @@
 {
   "compilerOptions": {
-    "jsx": "react-jsx",
     "outDir": "dist",
-    "module": "NodeNext",
+    "rootDir": ".",
+    "module": "CommonJS",
     "target": "ES2022",
+    "moduleResolution": "node",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "moduleResolution": "NodeNext",
     "allowJs": false,
-    "strict": true
+    "strict": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "server", 
-    "resume-parser",
-    "global.d.ts",
-    "components/**/*",
-    "lib/**/*",
     "server/**/*",
-    "resume-parser/**/*",
-    "page.tsx"],
-   "exclude": [
-    "node_modules", 
-    "public", 
-    "lib/__tests__", 
-    "lib/**/*.test.ts", 
-    "lib/**/*.test.tsx", 
+    "lib/**/*",
+    "global.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "public",
+    "components",
+    "resume-parser",
     "**/__tests__/**"
   ]
 }

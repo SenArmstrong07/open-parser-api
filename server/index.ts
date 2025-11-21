@@ -47,29 +47,29 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
       const buffer = Buffer.from(base64, "base64");
       const lower = (mimeType || fileName || "").toLowerCase();
 
+      // PDF path -> save to temp file and call PDF parser
       if (lower.includes("pdf") || fileName.endsWith(".pdf") || mimeType === "application/pdf") {
         const result = await parsePdfBufferToResume(buffer);
         return res.json(result);
       }
 
+      // DOCX path -> prefer structured docx pipeline, fallback to text pipeline
       if (
         lower.includes("word") ||
         fileName.endsWith(".docx") ||
-        mimeType ===
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
-        // Try the structured DOCX path (synthesizes TextItems and reuses PDF pipeline)
         try {
           const { parsedText, structured } = await parseDocxToStructured(buffer);
           return res.json({ parsedText, structured });
         } catch (err) {
-          console.error("parseDocxToStructured failed, falling back to plain text:", err);
+          console.error("parseDocxToStructured failed, falling back to plain-text path:", err);
           const parsedText = await parseDocxBuffer(buffer);
           let structured: any = null;
           try {
             structured = await parseResumeFromText(parsedText);
           } catch (err2) {
-            console.error("parseResumeFromText failed:", err2);
+            console.error("parseResumeFromText failed on DOCX fallback:", err2);
           }
           return res.json({ parsedText, structured });
         }
@@ -78,8 +78,20 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
       return res.status(400).json({ error: "Unsupported file type" });
     }
 
-    // 3) Bad request if nothing usable provided
-    return res.status(400).json({ error: "Provide resumeData or a base64 file payload" });
+    // Backwards compat: (optional) accept resumeData text if needed
+    if (req.body && typeof req.body.resumeData === "string") {
+      const parsedText = req.body.resumeData;
+      let structured: any = null;
+      try {
+        structured = await parseResumeFromText(parsedText);
+      } catch (err) {
+        console.error("parseResumeFromText failed:", err);
+      }
+      return res.json({ parsedText, structured });
+    }
+
+    // Bad request if nothing usable provided
+    return res.status(400).json({ error: "Provide a base64 file payload (pdf/docx) or resumeData" });
   } catch (err: any) {
     return res.status(500).json({ error: String(err && err.message ? err.message : err) });
   }

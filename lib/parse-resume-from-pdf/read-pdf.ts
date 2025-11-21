@@ -8,20 +8,36 @@
 
 const loadPdfJs = async () =>
 {
-  const cjsCandidate = await import ("pdfjs-dist/legacy/build/pdf").catch(() => null);
-  const esmCandidate = await import("pdfjs-dist/build/pdf").catch(() => null);
-  const pdfjsModule = cjsCandidate ?? esmCandidate;
+  let pdfjsModule = null;
+
+  // Try legacy build (pdfjs-dist v3.x)
+  pdfjsModule = await import("pdfjs-dist/legacy/build/pdf.mjs").catch(() => null)
+              || await import("pdfjs-dist/legacy/build/pdf").catch(() => null);
+
+  // Try modern ESM build (pdfjs-dist v4.x)
+  pdfjsModule = pdfjsModule
+              || await import("pdfjs-dist/build/pdf.mjs").catch(() => null);
+
   if (!pdfjsModule) {
     throw new Error("Could not load pdfjs-dist");
   }
-  const pdfjs = (pdfjsModule as any).default ?? pdfjsModule;
+
+  const pdfjs = pdfjsModule.default ?? pdfjsModule;
+
+  // Worker config (try both paths)
   try {
-    pdfjs.GlobalWorkerOptions = pdfjs.GlobalWorkerOptions || {};
-    pdfjs.GlobalWorkerOptions.workerSrc = "pdfjs-dist/build/pdf.worker.js";
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
   } catch {
-    /* ignore */
+    try {
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        require.resolve("pdfjs-dist/build/pdf.worker.mjs");
+    } catch {
+      /* ignore */
+    }
   }
-  return pdfjs as any;
+
+  return pdfjs;
 }
 
 import type { TextItem as PdfjsTextItem } from "pdfjs-dist/types/src/display/api";

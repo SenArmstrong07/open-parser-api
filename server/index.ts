@@ -2,7 +2,8 @@ import express from "express";
 import cors from "cors";
 import fs from "fs/promises";
 import path from "path";
-import { parseResumeFromPdf } from "../lib/parse-resume-from-pdf/index";
+import { parseResumeFromPdf, parseResumeFromText } from "../lib/parse-resume-from-pdf/index";
+import { parseDocxBuffer } from "./parseDocx";
 
 const app = express();
 app.use(cors());
@@ -44,8 +45,17 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
         mimeType ===
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
-        const text = ""; //await parseDocxBuffer(buffer);
-        return res.json({ parsedText: text });
+        // 1) extract plain text from docx buffer
+        const parsedText = await parseDocxBuffer(buffer);
+        // 2) post-process using the same lib pipeline as PDFs
+        let structured: any = null;
+        try {
+          structured = await parseResumeFromText(parsedText);
+        } catch (err) {
+          // continue and return parsedText even if structured parsing fails
+          console.error("parseResumeFromText failed:", err);
+        }
+        return res.json({ parsedText, structured });
       }
 
       return res.status(400).json({ error: "Unsupported file type" });

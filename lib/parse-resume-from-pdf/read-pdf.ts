@@ -24,18 +24,9 @@ const loadPdfJs = async () =>
 
   const pdfjs = pdfjsModule.default ?? pdfjsModule;
 
-  // Worker config (try both paths)
-  try {
-    pdfjs.GlobalWorkerOptions.workerSrc =
-      require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
-  } catch {
-    try {
-      pdfjs.GlobalWorkerOptions.workerSrc =
-        require.resolve("pdfjs-dist/build/pdf.worker.mjs");
-    } catch {
-      /* ignore */
-    }
-  }
+  // Set workerSrc
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    require.resolve("pdfjs-dist/build/pdf.worker.mjs");
 
   return pdfjs;
 }

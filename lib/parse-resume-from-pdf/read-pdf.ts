@@ -1,9 +1,28 @@
 // Getting pdfjs to work is tricky. The following 3 lines would make it work
 // https://stackoverflow.com/a/63486898/7699841
-import * as pdfjs from "pdfjs-dist";
-// @ts-ignore
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.entry";
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// import * as pdfjs from "pdfjs-dist";
+// // @ts-ignore
+// import pdfjsWorker from "pdfjs-dist/build/pdf.worker.entry";
+// pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+
+const loadPdfJs = async () =>
+{
+  const cjsCandidate = await import ("pdfjs-dist/legacy/build/pdf").catch(() => null);
+  const esmCandidate = await import("pdfjs-dist/build/pdf").catch(() => null);
+  const pdfjsModule = cjsCandidate ?? esmCandidate;
+  if (!pdfjsModule) {
+    throw new Error("Could not load pdfjs-dist");
+  }
+  const pdfjs = (pdfjsModule as any).default ?? pdfjsModule;
+  try {
+    pdfjs.GlobalWorkerOptions = pdfjs.GlobalWorkerOptions || {};
+    pdfjs.GlobalWorkerOptions.workerSrc = "pdfjs-dist/build/pdf.worker.js";
+  } catch {
+    /* ignore */
+  }
+  return pdfjs as any;
+}
 
 import type { TextItem as PdfjsTextItem } from "pdfjs-dist/types/src/display/api";
 import type { TextItem, TextItems } from "../parse-resume-from-pdf/types";
@@ -22,6 +41,7 @@ import type { TextItem, TextItems } from "../parse-resume-from-pdf/types";
  * }
  */
 export const readPdf = async (fileUrl: string): Promise<TextItems> => {
+  const pdfjs = await loadPdfJs();
   const pdfFile = await pdfjs.getDocument(fileUrl).promise;
   let textItems: TextItems = [];
 
@@ -35,7 +55,8 @@ export const readPdf = async (fileUrl: string): Promise<TextItems> => {
     const commonObjs = page.commonObjs;
 
     // Convert Pdfjs TextItem type to new TextItem type
-    const pageTextItems = textContent.items.map((item) => {
+    const pageItems = textContent.items as any[];
+    const pageTextItems = pageItems.map((item: any) => {
       const {
         str: text,
         dir, // Remove text direction

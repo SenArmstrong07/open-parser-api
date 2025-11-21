@@ -21,6 +21,11 @@ declare module "globals-css";
 // basic declarations to avoid build failure for express/cors if @types are missing
 declare module "express";
 declare module "cors";
+declare module "pdfjs-dist/legacy/build/pdf";
+declare module "pdfjs-dist/build/pdf";
+declare module "pdfjs-dist/build/pdf.mjs";
+declare module "pdfjs-dist/build/pdf.worker.js";
+declare module "pdfjs-dist/build/pdf.worker.mjs";
 
 // test globals (short-term fallback if @types/jest not installed)
 declare var describe: any;

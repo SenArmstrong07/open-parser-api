@@ -3,7 +3,7 @@ import cors from "cors";
 import fs from "fs/promises";
 import path from "path";
 import { parseResumeFromPdf, parseResumeFromText } from "../lib/parse-resume-from-pdf/index";
-import { parseDocxBuffer } from "./parseDocx";
+import { parseDocxBuffer, parseDocxToStructured } from "./parseDocx";
 
 const app = express();
 app.use(cors());
@@ -45,17 +45,21 @@ app.post("/api/parse-resume", async (req: any, res: any) => {
         mimeType ===
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
-        // 1) extract plain text from docx buffer
-        const parsedText = await parseDocxBuffer(buffer);
-        // 2) post-process using the same lib pipeline as PDFs
-        let structured: any = null;
+        // Try the structured DOCX path (synthesizes TextItems and reuses PDF pipeline)
         try {
-          structured = await parseResumeFromText(parsedText);
+          const { parsedText, structured } = await parseDocxToStructured(buffer);
+          return res.json({ parsedText, structured });
         } catch (err) {
-          // continue and return parsedText even if structured parsing fails
-          console.error("parseResumeFromText failed:", err);
+          console.error("parseDocxToStructured failed, falling back to plain text:", err);
+          const parsedText = await parseDocxBuffer(buffer);
+          let structured: any = null;
+          try {
+            structured = await parseResumeFromText(parsedText);
+          } catch (err2) {
+            console.error("parseResumeFromText failed:", err2);
+          }
+          return res.json({ parsedText, structured });
         }
-        return res.json({ parsedText, structured });
       }
 
       return res.status(400).json({ error: "Unsupported file type" });

@@ -29,6 +29,19 @@ async function parsePdfBufferToResume(buffer: Buffer): Promise<any> {
 
 app.post("/api/parse-resume", async (req: any, res: any) => {
   try {
+    // New: accept extracted text directly (primary path)
+    if (req.body && typeof req.body.resumeData === "string") {
+      const parsedText = req.body.resumeData;
+      let structured: any = null;
+      try {
+        structured = await parseResumeFromText(parsedText);
+      } catch (err) {
+        console.error("parseResumeFromText failed:", err);
+      }
+      return res.json({ parsedText, structured });
+    }
+
+    // Backwards compat: handle base64 file payloads if provided
     if (req.body && typeof req.body.base64 === "string") {
       const { fileName = "", mimeType = "", base64 } = req.body;
       const buffer = Buffer.from(base64, "base64");

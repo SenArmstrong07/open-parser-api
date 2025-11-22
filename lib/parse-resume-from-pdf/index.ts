@@ -4,6 +4,8 @@ import { groupTextItemsIntoLines } from "./group-text-items-into-lines";
 import { groupLinesIntoSections } from "./group-lines-into-sections";
 import { extractResumeFromSections } from "./extract-resume-from-sections";
 import { extractProfile } from "./extract-resume-from-sections/extract-profile";
+import { getSectionLinesByKeywords } from "./extract-resume-from-sections/lib/get-section-lines";
+import { getBulletPointsFromLines } from "./extract-resume-from-sections/lib/bullet-points";
 
 /**
  * Resume parser util that parses a resume from a resume pdf file
@@ -117,8 +119,9 @@ export const parseResumeFromText = async (text: string) => {
 
 // New helper: enhance a parsed resume using profile extraction + simple heuristics
 export const enhanceResumeWithProfile = (
-  sections: Record<string, TextItem[][]>, 
-  resume: any) => {
+  sections: Record<string, TextItem[][]>,
+  resume: any
+) => {
   try {
     const { profile: extractedProfile } = extractProfile(sections);
 
@@ -130,15 +133,51 @@ export const enhanceResumeWithProfile = (
     resume.profile.url = resume.profile.url || extractedProfile.url || "";
     resume.profile.location =
       resume.profile.location || extractedProfile.location || "";
-    resume.profile.summary = resume.profile.summary || extractedProfile.summary || "";
+    resume.profile.summary =
+      resume.profile.summary || extractedProfile.summary || "";
 
     // Gather all text strings from sections
-    const allTextItems = Object.values(sections)
-      .flat(2)
-      .map((ti: TextItem) => ti.text || "")
-      .join(" | ");
+    // Object.values(sections) has a loose type; explicitly narrow to TextItem[]
+    // Explicitly flatten sections into a typed TextItem[] so TS knows element type
+    const flattenedTextItems: TextItem[] = [];
+    for (const lines of Object.values(sections)) {
+      for (const line of lines) {
+        for (const ti of line) {
+          flattenedTextItems.push(ti);
+        }
+      }
+    }
+    const allTextItems = flattenedTextItems.map((ti) => ti.text || "").join(" | ");
 
-    // Age heuristics
+    // --- robust email/phone/address fallbacks ---
+    if (!resume.profile.email) {
+      const emailMatch = allTextItems.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+      if (emailMatch) resume.profile.email = emailMatch[0];
+    }
+
+    if (!resume.profile.phone) {
+      const phoneMatch = allTextItems.match(/(\+?\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}/);
+      if (phoneMatch) resume.profile.phone = phoneMatch[0].replace(/\s{2,}/g,' ').trim();
+    }
+
+    // Address: check contact section first, then general text
+    if (!resume.profile.location) {
+      const contactLines = getSectionLinesByKeywords(sections, ["contact", "address"]);
+      let addrCandidates: string[] = [];
+      if (contactLines.length) {
+        addrCandidates = contactLines.flat().map((ti) => ti.text || "").filter(Boolean);
+      } else {
+        addrCandidates = flattenedTextItems.map((ti) => ti.text || "").filter(Boolean);
+      }
+      const addrLine = addrCandidates.find((t: string) =>
+        /\d{1,5}\s+\w+.*(Street|St\.|Avenue|Ave|Road|Rd\.|Lane|Ln\.|Boulevard|Blvd|Dr|Brgy\.|Barangay|City\.)/i.test(t) ||
+        /[A-Z][a-zA-Z\s]+,\s*[A-Z][a-zA-Z\s]+/.test(t) ||
+        /\bBrgy\b|\bBarangay\b/i.test(t)
+      );
+      if (addrLine) resume.profile.location = addrLine.trim();
+    }
+
+    // Age heuristics (unchanged)
     const ageMatch =
       allTextItems.match(/\bAge[:\s]*([0-9]{1,3})\b/i) ||
       allTextItems.match(/\b([0-9]{1,3})\s+years?\s+old\b/i);
@@ -151,29 +190,43 @@ export const enhanceResumeWithProfile = (
       }
     }
 
-    // Address heuristics: find a line that looks like "123 Main St, City, ST 12345" or "City, ST"
-    const addressLine = Object.values(sections)
-      .flat(2)
-      .map((ti: TextItem) => ti.text || "")
-      .find((t: string) =>
-        /\d{1,5}\s+\w+.*(?:Street|St\.|Avenue|Ave|Road|Rd\.|Lane|Ln\.|Boulevard|Blvd|Dr|Brgy.|Barangay|City\.)/i.test(
-          t
-        ) ||
-        /[A-Z][a-zA-Z\s]+,\s*[A-Z]{2}\s*(?:\d{5})?/.test(t)
-      );
+    // --- Name fallback: look at top profile lines (1..3) for a plausible name ---
+    if (!resume.profile.name || !resume.profile.name.trim()) {
+      const profileLines = (sections.profile || []).slice(0, 3).flat().map((ti) => ti.text.trim());
+      for (const line of profileLines) {
+        // candidate: title case, <=4 words, contains letters (allow initials)
+        if (/^[A-Za-z][A-Za-z\.\s'-]{1,60}$/.test(line) && line.split(/\s+/).length <= 5) {
+          // avoid picking "About Me" or section keywords
+          if (!/^(About|Contact|Education|Technical|Skills|Summary|Objective)$/i.test(line)) {
+            resume.profile.name = line;
+            break;
+          }
+        }
+      }
+    }
 
-    if (addressLine) {
-      const addr = addressLine.trim();
-      if (!resume.profile.location || resume.profile.location.trim() === "") {
-        resume.profile.location = addr;
-      } else if (!resume.custom) {
-        resume.custom = { descriptions: [addr] };
-      } else if (!resume.custom.descriptions.includes(addr)) {
-        resume.custom.descriptions.push(addr);
+    // --- Skills fallback: if skills empty, look for 'technical'/'about' sections and extract bullets ---
+    const skillsEmpty = !resume.skills || (Array.isArray(resume.skills.descriptions) && resume.skills.descriptions.filter(Boolean).length === 0);
+    if (skillsEmpty) {
+      const skillLines = getSectionLinesByKeywords(sections, ["technical", "skill", "about", "skills"]);
+      if (skillLines && skillLines.length) {
+        const bullets = getBulletPointsFromLines(skillLines);
+        if (bullets && bullets.length) {
+          resume.skills = resume.skills || { featuredSkills: [], descriptions: [] };
+          // merge unique
+          const merged = [...new Set([...(resume.skills.descriptions || []), ...bullets.map((b) => b.replace(/\s+/g,' ').trim())])];
+          resume.skills.descriptions = merged;
+        }
+      }
+    }
+
+    // final normalization: trim strings
+    if (resume.profile) {
+      for (const k of ["name", "email", "phone", "location", "url", "summary"]) {
+        if (typeof resume.profile[k] === "string") resume.profile[k] = resume.profile[k].trim();
       }
     }
   } catch (err) {
-    // non-fatal; keep original resume if enhancement fails
     console.error("enhanceResumeWithProfile failed:", err);
   }
   return resume;

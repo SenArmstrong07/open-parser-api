@@ -3,6 +3,7 @@ import type { TextItem } from "../lib/parse-resume-from-pdf/types";
 import { groupTextItemsIntoLines } from "../lib/parse-resume-from-pdf/group-text-items-into-lines";
 import { groupLinesIntoSections } from "../lib/parse-resume-from-pdf/group-lines-into-sections";
 import { extractResumeFromSections } from "../lib/parse-resume-from-pdf/extract-resume-from-sections";
+import { enhanceResumeWithProfile } from "../lib/parse-resume-from-pdf/index";
 
 export async function parseDocxBuffer(buffer: Buffer): Promise<string> {
   // dynamic import so TypeScript/tsc doesn't fail if dependency missing at compile time
@@ -122,7 +123,10 @@ export async function parseDocxToStructured(buffer: Buffer): Promise<{ parsedTex
   // reuse existing pipeline to build structured resume
   const lines = groupTextItemsIntoLines(items);
   const sections = groupLinesIntoSections(lines);
-  const structured = extractResumeFromSections(sections);
+  let structured = extractResumeFromSections(sections);
+
+  // enhance structured result using profile/sections heuristics
+  structured = enhanceResumeWithProfile(sections, structured);
 
   return { parsedText, structured };
 }

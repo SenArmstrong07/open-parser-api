@@ -3,6 +3,7 @@ import type { TextItem, TextItems } from "./types";
 import { groupTextItemsIntoLines } from "./group-text-items-into-lines";
 import { groupLinesIntoSections } from "./group-lines-into-sections";
 import { extractResumeFromSections } from "./extract-resume-from-sections";
+import { extractProfile } from "./extract-resume-from-sections/extract-profile";
 
 /**
  * Resume parser util that parses a resume from a resume pdf file
@@ -22,7 +23,8 @@ export const parseResumeFromPdf = async (fileUrl: string) => {
   // Step 4. Extract resume from sections
   const resume = extractResumeFromSections(sections);
 
-  return resume;
+  // enhance using profile extraction + heuristics
+  return enhanceResumeWithProfile(sections, resume);
 };
 
 /**
@@ -110,5 +112,69 @@ export const parseResumeFromText = async (text: string) => {
   const lines = groupTextItemsIntoLines(items);
   const sections = groupLinesIntoSections(lines);
   const resume = extractResumeFromSections(sections);
+  return enhanceResumeWithProfile(sections, resume);
+};
+
+// New helper: enhance a parsed resume using profile extraction + simple heuristics
+export const enhanceResumeWithProfile = (
+  sections: Record<string, TextItem[][]>, 
+  resume: any) => {
+  try {
+    const { profile: extractedProfile } = extractProfile(sections);
+
+    resume.profile = resume.profile || {};
+    // Merge basic profile fields if missing on resume
+    resume.profile.name = resume.profile.name || extractedProfile.name || "";
+    resume.profile.email = resume.profile.email || extractedProfile.email || "";
+    resume.profile.phone = resume.profile.phone || extractedProfile.phone || "";
+    resume.profile.url = resume.profile.url || extractedProfile.url || "";
+    resume.profile.location =
+      resume.profile.location || extractedProfile.location || "";
+    resume.profile.summary = resume.profile.summary || extractedProfile.summary || "";
+
+    // Gather all text strings from sections
+    const allTextItems = Object.values(sections)
+      .flat(2)
+      .map((ti: TextItem) => ti.text || "")
+      .join(" | ");
+
+    // Age heuristics
+    const ageMatch =
+      allTextItems.match(/\bAge[:\s]*([0-9]{1,3})\b/i) ||
+      allTextItems.match(/\b([0-9]{1,3})\s+years?\s+old\b/i);
+    if (ageMatch && ageMatch[1]) {
+      const ageText = `Age: ${ageMatch[1]}`;
+      if (!resume.profile.summary || resume.profile.summary.trim() === "") {
+        resume.profile.summary = ageText;
+      } else if (!resume.profile.summary.includes(ageText)) {
+        resume.profile.summary = `${resume.profile.summary} • ${ageText}`;
+      }
+    }
+
+    // Address heuristics: find a line that looks like "123 Main St, City, ST 12345" or "City, ST"
+    const addressLine = Object.values(sections)
+      .flat(2)
+      .map((ti: TextItem) => ti.text || "")
+      .find((t: string) =>
+        /\d{1,5}\s+\w+.*(?:Street|St\.|Avenue|Ave|Road|Rd\.|Lane|Ln\.|Boulevard|Blvd|Dr|Brgy.|Barangay|City\.)/i.test(
+          t
+        ) ||
+        /[A-Z][a-zA-Z\s]+,\s*[A-Z]{2}\s*(?:\d{5})?/.test(t)
+      );
+
+    if (addressLine) {
+      const addr = addressLine.trim();
+      if (!resume.profile.location || resume.profile.location.trim() === "") {
+        resume.profile.location = addr;
+      } else if (!resume.custom) {
+        resume.custom = { descriptions: [addr] };
+      } else if (!resume.custom.descriptions.includes(addr)) {
+        resume.custom.descriptions.push(addr);
+      }
+    }
+  } catch (err) {
+    // non-fatal; keep original resume if enhancement fails
+    console.error("enhanceResumeWithProfile failed:", err);
+  }
   return resume;
 };

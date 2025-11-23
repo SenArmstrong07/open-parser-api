@@ -136,9 +136,7 @@ export const enhanceResumeWithProfile = (
     resume.profile.summary =
       resume.profile.summary || extractedProfile.summary || "";
 
-    // Gather all text strings from sections
-    // Object.values(sections) has a loose type; explicitly narrow to TextItem[]
-    // Explicitly flatten sections into a typed TextItem[] so TS knows element type
+    // Gather all text strings from sections - typed flatten
     const flattenedTextItems: TextItem[] = [];
     for (const lines of Object.values(sections)) {
       for (const line of lines) {
@@ -149,15 +147,28 @@ export const enhanceResumeWithProfile = (
     }
     const allTextItems = flattenedTextItems.map((ti) => ti.text || "").join(" | ");
 
-    // --- robust email/phone/address fallbacks ---
+    // --- robust email fallback ---
     if (!resume.profile.email) {
       const emailMatch = allTextItems.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
-      if (emailMatch) resume.profile.email = emailMatch[0];
+      if (emailMatch) resume.profile.email = emailMatch[0].trim();
     }
 
+    // --- improved phone extraction: choose longest digit-rich match ---
     if (!resume.profile.phone) {
-      const phoneMatch = allTextItems.match(/(\+?\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}/);
-      if (phoneMatch) resume.profile.phone = phoneMatch[0].replace(/\s{2,}/g,' ').trim();
+      const phoneCandidates = (allTextItems.match(/(\+?[\d\-\s\(\)]{7,}\d)/g) || []).map((s) => s.trim());
+      let bestPhone = "";
+      let bestDigits = 0;
+      for (const c of phoneCandidates) {
+        const digits = (c.match(/\d/g) || []).length;
+        if (digits > bestDigits) {
+          bestDigits = digits;
+          bestPhone = c;
+        }
+      }
+      if (bestPhone) {
+        // Normalize: keep + if present and spaces/dashes/parentheses
+        resume.profile.phone = bestPhone.replace(/\s{2,}/g, " ").replace(/\s+$/,"");
+      }
     }
 
     // Address: check contact section first, then general text
@@ -169,11 +180,18 @@ export const enhanceResumeWithProfile = (
       } else {
         addrCandidates = flattenedTextItems.map((ti) => ti.text || "").filter(Boolean);
       }
-      const addrLine = addrCandidates.find((t: string) =>
-        /\d{1,5}\s+\w+.*(Street|St\.|Avenue|Ave|Road|Rd\.|Lane|Ln\.|Boulevard|Blvd|Dr|Brgy\.|Barangay|City\.)/i.test(t) ||
-        /[A-Z][a-zA-Z\s]+,\s*[A-Z][a-zA-Z\s]+/.test(t) ||
-        /\bBrgy\b|\bBarangay\b/i.test(t)
-      );
+
+      // Prefer explicit location keywords (City, Brgy, Barangay, Province, Town, Brgy.)
+      const locationKeywords = /\b(city|brgy|barangay|province|town|municipality|brgy\.|barangay|povince|latlong)\b/i;
+      const addrLine = addrCandidates.find((t: string) => {
+        if (locationKeywords.test(t)) return true;
+        if (/\bBrgy\b|\bBarangay\b/i.test(t)) return true;
+        if (/\d{1,5}\s+\w+/.test(t) && /\b(street|st\.|avenue|ave|road|rd\.|lane|ln\.|boulevard|blvd|drive|dr\.)/i.test(t)) return true;
+        // fallback: require 'City' or 'Province' or 'Brgy' in comma-separated formats; avoid generic "Word, Word" matches
+        if (/,/.test(t) && /\b(city|province|laguna|manila|metro|quezon|cebu|davao)\b/i.test(t)) return true;
+        return false;
+      });
+
       if (addrLine) resume.profile.location = addrLine.trim();
     }
 
@@ -190,18 +208,31 @@ export const enhanceResumeWithProfile = (
       }
     }
 
-    // --- Name fallback: look at top profile lines (1..3) for a plausible name ---
+    // --- Name fallback: merge adjacent top lines when first line is short/single token ---
     if (!resume.profile.name || !resume.profile.name.trim()) {
-      const profileLines = (sections.profile || []).slice(0, 3).flat().map((ti) => ti.text.trim());
-      for (const line of profileLines) {
-        // candidate: title case, <=4 words, contains letters (allow initials)
-        if (/^[A-Za-z][A-Za-z\.\s'-]{1,60}$/.test(line) && line.split(/\s+/).length <= 5) {
-          // avoid picking "About Me" or section keywords
-          if (!/^(About|Contact|Education|Technical|Skills|Summary|Objective)$/i.test(line)) {
-            resume.profile.name = line;
-            break;
+      const profileLines = (sections.profile || []).slice(0, 4).flat().map((ti) => ti.text.trim()).filter(Boolean);
+      if(profileLines.length){
+        const first = profileLines[0];
+        if (first.split(/\s+/).length === 1 && profileLines.length > 1)
+        {
+          const combined = [first, profileLines[1], profileLines[2]].filter(Boolean).join(" ");
+          const candidate = combined.split(/\n/)[0].trim();
+          if (/^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(candidate) && candidate.split(/\s+/).length <= 6)
+          {
+            resume.profile.name = candidate;
+          }
+          else
+          {
+            resume.profile.name = profileLines[1];
           }
         }
+      } else
+      {
+        // choose the best short line that looks like a name
+         const nameCandidate = profileLines.find((line) =>
+            /^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(line) && line.split(/\s+/).length <= 6 && !/^(About|Contact|Education|Technical|Skills|Summary|Objective)$/i.test(line)
+          );
+          if (nameCandidate) resume.profile.name = nameCandidate;
       }
     }
 

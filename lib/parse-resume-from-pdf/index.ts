@@ -195,7 +195,7 @@ export const enhanceResumeWithProfile = (
       if (addrLine) resume.profile.location = addrLine.trim();
     }
 
-    // Age heuristics (unchanged)
+    // Age heuristics
     const ageMatch =
       allTextItems.match(/\bAge[:\s]*([0-9]{1,3})\b/i) ||
       allTextItems.match(/\b([0-9]{1,3})\s+years?\s+old\b/i);
@@ -210,44 +210,105 @@ export const enhanceResumeWithProfile = (
 
     // --- Name fallback: merge adjacent top lines when first line is short/single token ---
     if (!resume.profile.name || !resume.profile.name.trim()) {
-      const profileLines = (sections.profile || []).slice(0, 4).flat().map((ti) => ti.text.trim()).filter(Boolean);
-      if(profileLines.length){
-        const first = profileLines[0];
-        if (first.split(/\s+/).length === 1 && profileLines.length > 1)
-        {
-          const combined = [first, profileLines[1], profileLines[2]].filter(Boolean).join(" ");
+      // 1) Prefer explicit profile section top lines
+      const profileLines = (sections.profile || [])
+        .slice(0, 6)
+        .flat()
+        .map((ti) => ti.text.trim())
+        .filter(Boolean);
+
+      const chooseNameFromLines = (linesArr: string[]) => {
+        if (linesArr.length === 0) return "";
+        // If first line is a single token (e.g. "Rabulan") combine with next
+        const first = linesArr[0];
+        if (first.split(/\s+/).length === 1 && linesArr.length > 1) {
+          const combined = [first, linesArr[1], linesArr[2]].filter(Boolean).join(" ");
           const candidate = combined.split(/\n/)[0].trim();
-          if (/^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(candidate) && candidate.split(/\s+/).length <= 6)
-          {
-            resume.profile.name = candidate;
+          if (/^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(candidate) && candidate.split(/\s+/).length <= 6) {
+            return candidate;
           }
-          else
-          {
-            resume.profile.name = profileLines[1];
-          }
+          return linesArr[1];
         }
-      } else
-      {
-        // choose the best short line that looks like a name
-         const nameCandidate = profileLines.find((line) =>
-            /^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(line) && line.split(/\s+/).length <= 6 && !/^(About|Contact|Education|Technical|Skills|Summary|Objective)$/i.test(line)
-          );
-          if (nameCandidate) resume.profile.name = nameCandidate;
+        // otherwise pick the first short title-case line
+        const nameCandidate = linesArr.find((line) =>
+          /^[A-Za-z][A-Za-z\.\s'-]{1,80}$/.test(line) && line.split(/\s+/).length <= 6 && !/^(About|Contact|Education|Technical|Skills|Summary|Objective)$/i.test(line)
+        );
+        return nameCandidate || "";
+      };
+
+      let nameCandidate = chooseNameFromLines(profileLines);
+
+      // 2) If none, fallback to topmost text items on the page (by y)
+      if (!nameCandidate) {
+        const groupedByY: { y: number; items: TextItem[] }[] = [];
+        const tol = 2; // y tolerance to group same line
+        const sorted = [...flattenedTextItems].sort((a, b) => b.y - a.y); // top-first
+        for (const it of sorted.slice(0, 30)) {
+          const group = groupedByY.find((g) => Math.abs(g.y - it.y) <= tol);
+          if (group) group.items.push(it);
+          else groupedByY.push({ y: it.y, items: [it] });
+        }
+        // take the top 3 grouped lines and build candidate strings
+        const linesText = groupedByY.slice(0, 4).map((g) => g.items.map((i) => i.text).join(" ").trim()).filter(Boolean);
+        nameCandidate = chooseNameFromLines(linesText);
       }
+
+      if (nameCandidate) resume.profile.name = nameCandidate;
     }
 
-    // --- Skills fallback: if skills empty, look for 'technical'/'about' sections and extract bullets ---
+    // --- Skills fallback: ensure bullet extraction maps to resume.skills.descriptions ---
     const skillsEmpty = !resume.skills || (Array.isArray(resume.skills.descriptions) && resume.skills.descriptions.filter(Boolean).length === 0);
     if (skillsEmpty) {
-      const skillLines = getSectionLinesByKeywords(sections, ["technical", "skill", "about", "skills"]);
+      const skillLines = getSectionLinesByKeywords(sections, ["technical", "skill", "about", "skills", "soft"]);
       if (skillLines && skillLines.length) {
         const bullets = getBulletPointsFromLines(skillLines);
         if (bullets && bullets.length) {
           resume.skills = resume.skills || { featuredSkills: [], descriptions: [] };
-          // merge unique
           const merged = [...new Set([...(resume.skills.descriptions || []), ...bullets.map((b) => b.replace(/\s+/g,' ').trim())])];
           resume.skills.descriptions = merged;
+        } else {
+          // fallback: take each line text if no bullet characters found
+          const fallback = skillLines.flat().map((ti) => ti.text.trim()).filter(Boolean);
+          if (fallback.length) {
+            resume.skills = resume.skills || { featuredSkills: [], descriptions: [] };
+            resume.skills.descriptions = [...new Set([...(resume.skills.descriptions || []), ...fallback])];
+          }
         }
+      }
+    }
+
+    // --- Education fallback: try to assemble education entries from year patterns + nearby school keywords ---
+    if ((!resume.educations || resume.educations.length === 0 || resume.educations.every((e: any) => !e.school)) ) {
+      const schoolKeywords = /\b(College|University|Lyceum|School|Institute|Campus|High School|HS|PUP|Lyceum of|San Pedro|Alabang)\b/i;
+      const yearRangeRe = /\(?\s*(?:19|20)\d{2}\s*(?:[-–—]\s*(?:19|20)\d{2}|(?:\s*-\s*Present|Present))\s*\)?/i;
+
+      const candidateLines = flattenedTextItems.map((ti) => ({ text: ti.text.trim(), y: ti.y, x: ti.x }));
+      // find lines with year pattern and attach closest previous line that matches school keywords
+      const educations: any[] = [];
+      for (let i = 0; i < candidateLines.length; i++) {
+        const ln = candidateLines[i];
+        const yearMatch = ln.text.match(yearRangeRe);
+        if (yearMatch) {
+          // search upward (higher y) for school-like text within a small vertical window
+          const yWindow = ln.y + 80; // higher y = visually top; add margin
+          const nearby = candidateLines
+            .filter((c) => c.y >= ln.y - 6 && c.y <= yWindow)
+            .map((c) => c.text);
+          // pick first nearby that matches schoolKeywords or the previous line text
+          let school = nearby.find((t) => schoolKeywords.test(t)) || nearby[0] || "";
+          // degree or notes may be on same or next lines
+          let degree = "";
+          // try previous/following few lines
+          const idx = flattenedTextItems.findIndex((ti) => ti.text.trim() === ln.text);
+          const context = flattenedTextItems.slice(Math.max(0, idx - 3), idx + 3).map((t) => t.text.trim());
+          // look for degree-like words
+          const degMatch = context.join(" ").match(/\b(B\.?S\.?|Bachelors|Bachelor|Associate|BS|BA|B\.Sc|Information Technology|Computer|College)\b/i);
+          if (degMatch) degree = degMatch[0];
+          educations.push({ school: school || "", degree, date: yearMatch[0], descriptions: [] });
+        }
+      }
+      if (educations.length) {
+        resume.educations = educations;
       }
     }
 
